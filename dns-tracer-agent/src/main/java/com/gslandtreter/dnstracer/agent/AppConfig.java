@@ -1,13 +1,14 @@
 package com.gslandtreter.dnstracer.agent;
 
 import com.gslandtreter.dnstracer.agent.asn.ASNDatabase;
-import com.gslandtreter.dnstracer.agent.dao.util.DomainDnss;
+import com.gslandtreter.dnstracer.agent.dao.util.DomainDnssFactory;
+import com.gslandtreter.dnstracer.agent.job.VersionInfoHandler;
 import com.gslandtreter.dnstracer.agent.rest.DnsTracerService;
 import com.gslandtreter.dnstracer.agent.rest.DnsTracerServiceImpl;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestTemplate;
 
@@ -26,9 +27,12 @@ public class AppConfig {
     @Value("${threadPool.size}")
     private Integer threadPoolSize;
 
+    @Value("${node.id}")
+    private String nodeId;
+
     @Bean
-    public DomainDnss domainDnss() {
-        return new DomainDnss();
+    public DomainDnssFactory domainDnss() {
+        return new DomainDnssFactory();
     }
 
     @Bean
@@ -47,7 +51,12 @@ public class AppConfig {
     }
 
     @Bean
-    public TaskExecutor taskExecutor() {
+    public VersionInfoHandler versionInfoHandler() {
+        return new VersionInfoHandler(dnsTracerService, nodeId);
+    }
+
+    @Bean
+    public ThreadPoolTaskExecutor taskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 
         executor.setThreadNamePrefix("hopParser-");
@@ -57,4 +66,7 @@ public class AppConfig {
 
         return executor;
     }
+
+    @Autowired
+    private DnsTracerService dnsTracerService;
 }

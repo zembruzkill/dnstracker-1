@@ -2,8 +2,7 @@ package com.gslandtreter.dnstracer.agent.job;
 
 import com.gslandtreter.dnstracer.agent.asn.ASEntry;
 import com.gslandtreter.dnstracer.agent.asn.ASNDatabase;
-import com.gslandtreter.dnstracer.agent.dao.util.DomainDnss;
-import com.gslandtreter.dnstracer.agent.dao.util.VersionInfo;
+import com.gslandtreter.dnstracer.agent.dao.util.DomainDnssFactory;
 import com.gslandtreter.dnstracer.agent.networkUtils.NSResolver;
 import com.gslandtreter.dnstracer.agent.networkUtils.TRFetch;
 import com.gslandtreter.dnstracer.agent.rest.DnsTracerService;
@@ -35,6 +34,9 @@ public class HopAnalyser implements Runnable {
     @Autowired
     DnsTracerService dnsTracerService;
 
+    @Autowired
+    VersionInfoHandler versionInfoHandler;
+
     private static InetAddress getHopBeforeTheLast(List<InetAddress> hops) {
         InetAddress hopBeforeTheLast = null;
         final int totalHops = hops.size();
@@ -53,18 +55,33 @@ public class HopAnalyser implements Runnable {
         InetAddress nsIpv6 = NSResolver.getIPv6Address(nameServer);
         InetAddress nsIPv4 = NSResolver.getIPv4Address(nameServer);
 
+        if (nsIPv4 == null) {
+            return DomainDnssFactory.getDomainDnssEntity(
+                    position,
+                    domainName,
+                    nameServer,
+                    null,
+                    null,
+                    null,
+                    -1,
+                    null,
+                    -1,
+                    null,
+                    versionInfoHandler.getVersionInfoEntity().getId());
+        }
+
         ASEntry nsAsEntry = asnDatabase.getASEntry(nsIPv4.getHostAddress());
 
         hopBeforeTheLast = getHopBeforeTheLast(hops);
 
-        if (hopBeforeTheLast != null) {
+        if (hopBeforeTheLast != null && hbtlAs) {
             hbtlAs = asnDatabase.getASEntry(hopBeforeTheLast.getHostAddress());
             hbtlAsName = asnDatabase.getAsName(hbtlAs);
 
-            LOGGER.info("[({}){}/{}] - HBTL: {} - [{}]{}",
+            LOGGER.debug("[({}){}/{}] - HBTL: {} - [{}]{}",
                     domainName, nameServer, nsIpv6 != null ? nsIpv6.getHostAddress() : null, hopBeforeTheLast.getHostAddress(), hbtlAs, hbtlAsName);
 
-            DomainDnssEntity entity = DomainDnss.getDomainDnssEntity(
+            DomainDnssEntity entity = DomainDnssFactory.getDomainDnssEntity(
                     position,
                     domainName,
                     nameServer,
@@ -75,14 +92,14 @@ public class HopAnalyser implements Runnable {
                     hbtlAs.getAsSubnet(),
                     (int) nsAsEntry.getAsNumber(),
                     nsAsEntry.getAsSubnet(),
-                    VersionInfo.getVersionInfo().getId());
+                    versionInfoHandler.getVersionInfoEntity().getId());
 
             return entity;
         } else {
-            LOGGER.info("[({}){}/{}] - HBTL: null - [-1]",
+            LOGGER.debug("[({}){}/{}] - HBTL: null - [-1]",
                     domainName, nameServer, nsIpv6 != null ? nsIpv6.getHostAddress() : null);
 
-            DomainDnssEntity entity = DomainDnss.getDomainDnssEntity(
+            DomainDnssEntity entity = DomainDnssFactory.getDomainDnssEntity(
                     position,
                     domainName,
                     nameServer,
@@ -93,7 +110,7 @@ public class HopAnalyser implements Runnable {
                     null,
                     (int) nsAsEntry.getAsNumber(),
                     nsAsEntry.getAsSubnet(),
-                    VersionInfo.getVersionInfo().getId());
+                    versionInfoHandler.getVersionInfoEntity().getId());
 
             return entity;
         }
@@ -106,9 +123,25 @@ public class HopAnalyser implements Runnable {
             List<DomainDnssEntity> newEntries = new ArrayList<>();
 
             if (nameServers == null) {
-                LOGGER.error("{} has invalid domain info.", domainName);
+                LOGGER.debug("{} has invalid domain info.", domainName);
+            }
+            else {
+                for (String nameServer : nameServers) {
+                    List<InetAddress> hops = TRFetch.getHopsTo(nameServer);
 
-                DomainDnssEntity entity = DomainDnss.getDomainDnssEntity(
+                    if(hops == null) {
+                        LOGGER.debug("{} ({}) has invalid hop info.", domainName, nameServer);
+                        continue;
+                    }
+
+                    DomainDnssEntity entity = processHopInfo(nameServer, hops);
+                    newEntries.add(entity);
+                }
+            }
+
+            if(newEntries.size() == 0) {
+                // Default entry! Fill domain with invalid info if nothing was found!
+                DomainDnssEntity entity = DomainDnssFactory.getDomainDnssEntity(
                         position,
                         domainName,
                         null,
@@ -119,21 +152,9 @@ public class HopAnalyser implements Runnable {
                         null,
                         -1,
                         null,
-                        VersionInfo.getVersionInfo().getId());
+                        versionInfoHandler.getVersionInfoEntity().getId());
 
                 newEntries.add(entity);
-            }
-            else {
-                for (String nameServer : nameServers) {
-                    List<InetAddress> hops = TRFetch.getHopsTo(nameServer);
-
-                    //TODO: Log exception
-                    if(hops == null)
-                        continue;
-
-                    DomainDnssEntity entity = processHopInfo(nameServer, hops);
-                    newEntries.add(entity);
-                }
             }
 
             dnsTracerService.insertDnsServerEntries(newEntries);

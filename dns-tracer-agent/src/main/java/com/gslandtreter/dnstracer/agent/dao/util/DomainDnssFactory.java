@@ -1,11 +1,8 @@
 package com.gslandtreter.dnstracer.agent.dao.util;
 
-
-import com.gslandtreter.dnstracer.agent.rest.DnsTracerService;
 import com.gslandtreter.dnstracer.common.entity.DomainDnssEntity;
-import org.springframework.beans.factory.annotation.Autowired;
 
-public class DomainDnss {
+public class DomainDnssFactory {
 
     public static DomainDnssEntity getDomainDnssEntity(
             Integer position,
